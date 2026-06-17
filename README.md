@@ -58,7 +58,7 @@ compatible with the base schema, or parsing aborts.
 
 ```
 cli.py                 # command-line entry point
-src/psparser/
+psparser/
   __init__.py          # public API
   reader.py            # binary readers + field-type codes
   schema.py            # schema data models + base/embedded schema parsing

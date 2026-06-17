@@ -6,14 +6,13 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from psparser import build_tree, load_schema, parse_ps, render_tree  # noqa: E402
+from psparser import build_tree, load_schema, parse_ps, render_tree
 
 DEFAULT_SCHEMA = Path(__file__).parent / "assets" / "sch_13006.s_t"
 
 
 def main() -> None:
+    """Main entry point for the command-line interface."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("input", help="Parasolid binary file (.x_b)")
     ap.add_argument(
