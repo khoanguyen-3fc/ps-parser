@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from psparser import load_schema, parse_ps  # noqa: E402
+from psparser import build_tree, load_schema, parse_ps, render_tree  # noqa: E402
 
 DEFAULT_SCHEMA = Path(__file__).parent / "assets" / "sch_13006.s_t"
 
@@ -42,8 +42,14 @@ def main() -> None:
     with open(args.input, "rb") as f:
         nodes = parse_ps(f, schema)
 
-    for node in nodes:
-        print(json.dumps(node))
+    if args.tree:
+        print("warning: --tree is experimental", file=sys.stderr)
+        roots, children, by_id, unknown = build_tree(nodes)
+        print(render_tree(roots, children, by_id))
+        print(f"{unknown} nodes with unrecognized type (owner fallback).", file=sys.stderr)
+    else:
+        for node in nodes:
+            print(json.dumps(node))
 
     print(f"{args.input}: {len(nodes)} nodes parsed cleanly.", file=sys.stderr)
 

@@ -5,6 +5,7 @@ import logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 from .parser import parse_file_header, parse_ps, resolve_node_schema
+from .tree import build_tree, render_tree
 from .reader import FieldType, READERS, Reader
 from .schema import (
     EmbeddedField,
@@ -18,6 +19,8 @@ from .schema import (
 )
 
 __all__ = [
+    "build_tree",
+    "render_tree",
     "EmbeddedField",
     "FieldDef",
     "FieldType",
