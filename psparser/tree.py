@@ -19,6 +19,12 @@ _CHILD_FIELD: dict[str, list[str]] = {
     "ATTRIB_DEF": ["identifier", "field_names"],
     "LIST": ["list_block"],
     "POINTER_LIS_BLOCK": ["entries"],
+    "INTERSECTION": ["surface", "chart", "start", "end", "intersection_data"],
+    "B_SURFACE": ["nurbs", "data"],
+    "B_CURVE": ["nurbs", "data"],
+    "NURBS_SURF": ["bspline_vertices", "u_knot_mult", "v_knot_mult", "u_knots", "v_knots"],
+    "NURBS_CURVE": ["bspline_vertices", "knot_mult", "knots"],
+    "SP_CURVE": ["surface", "b_curve"],
 }
 
 # Types that are valid top-level roots with no expected parent.
@@ -32,8 +38,9 @@ def build_tree(
 
     Known topology types use their specific parent-pointer field. Known root
     types (BODY, ASSEMBLY) are placed at the top level. Everything else tries
-    the 'owner' field: if it resolves, the node is attached as a child;
-    otherwise it is excluded from the tree.
+    the 'geometric_owner' field first, then falls back to 'owner': if either
+    resolves, the node is attached as a child; otherwise it is excluded from
+    the tree.
 
     Nodes whose type appears in _CHILD_FIELD have that field's value(s) added
     as explicit children. The field may be absent/None, a single int ID, or a
@@ -63,9 +70,21 @@ def build_tree(
             roots.append(node["id"])
 
         else:
-            val = node.get("owner")
-            if isinstance(val, int) and val in by_id:
-                children[val].append(node["id"])
+            pid = None
+
+            geometric_owner = node.get("geometric_owner")
+            if (
+                isinstance(geometric_owner, int)
+                and geometric_owner != 1
+            ):
+                pid = geometric_owner
+            else:
+                owner = node.get("owner")
+                if isinstance(owner, int) and owner != 1:
+                    pid = owner
+
+            if pid is not None:
+                children[pid].append(node["id"])
                 fallback += 1
             else:
                 unknown.append(node["id"])
