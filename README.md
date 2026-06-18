@@ -28,7 +28,7 @@ python cli.py --debug samples/model.x_b
 # Use a different base schema
 python cli.py --schema assets/sch_13006.s_t samples/model.x_b
 
-# Display the topology tree (experimental)
+# Display the topology tree
 python cli.py --tree samples/model.x_b
 ```
 
@@ -37,7 +37,7 @@ python cli.py --tree samples/model.x_b
 - **Default** — one JSON Lines object per node with all decoded fields.
 - **`--debug`** — same JSON Lines output, plus detailed parser diagnostics
   (header, schema resolution, per-field values) written to **stderr**.
-- **`--tree`** — ASCII topology tree to stdout *(experimental)*. Nodes are
+- **`--tree`** — ASCII topology tree to stdout. Nodes are
   placed using type-specific parent pointers (`SHELL→body`, `FACE→shell`,
   `LOOP→face`, etc.). A count of nodes with unrecognized types is written to
   stderr.

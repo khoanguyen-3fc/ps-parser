@@ -34,7 +34,7 @@ _ROOT_TYPES = {"ASSEMBLY", "WORLD"}
 def build_tree(
     nodes: list[dict],
 ) -> tuple[list[int], dict[int, list[int]], dict[int, dict], int, list[int]]:
-    """Build a topology-aware parent→children map from a node list.
+    """Build a topology-aware parent->children map from a node list.
 
     Known topology types use their specific parent-pointer field. Known root
     types (BODY, ASSEMBLY) are placed at the top level. Everything else tries
@@ -90,7 +90,7 @@ def build_tree(
                 unknown.append(node["id"])
 
     # Attach explicit down-link children declared in _CHILD_FIELD.
-    # Any unknown node that gets referenced here is no longer unplaced —
+    # Any unknown node that gets referenced here is no longer unplaced -
     # remove it from the unknown list.
     child_placed: set[int] = set()
     for node in nodes:
@@ -115,17 +115,17 @@ def build_tree(
 def _lines(node_id: int, by_id, children, prefix: str, is_last: bool,
            seen: set[int]):
     node = by_id[node_id]
-    branch = "└── " if is_last else "├── "
+    branch = "\\-- " if is_last else "+-- "
     label = f"{node['node_name']}#{node['id']}"
 
     if node_id in seen:
-        # Already expanded elsewhere — show a back-reference marker only.
+        # Already expanded elsewhere - show a back-reference marker only.
         yield prefix + branch + label + " (seen)"
         return
 
     seen.add(node_id)
     yield prefix + branch + label
-    child_prefix = prefix + ("    " if is_last else "│   ")
+    child_prefix = prefix + ("    " if is_last else "|   ")
     kids = children.get(node_id, [])
     for i, kid in enumerate(kids):
         yield from _lines(kid, by_id, children, child_prefix,
@@ -137,7 +137,7 @@ def render_tree(roots, children, by_id) -> str:
 
     Nodes that appear more than once in the tree (shared references) are
     rendered in full only on their first occurrence. Subsequent occurrences
-    show the label followed by '↖ (ref)' and no children.
+    show the label followed by '(seen)' and no children.
     """
     lines = []
     seen: set[int] = set()
@@ -145,7 +145,6 @@ def render_tree(roots, children, by_id) -> str:
         node = by_id[root_id]
         label = f"{node['node_name']}#{node['id']}"
         if root_id in seen:
-            lines.append(label + "  ↖ (ref)")
             continue
         seen.add(root_id)
         lines.append(label)

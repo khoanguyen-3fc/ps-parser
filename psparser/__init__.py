@@ -1,4 +1,4 @@
-"""psparser — dynamic, schema-aware parser for Parasolid XT binary part files."""
+"""psparser - dynamic, schema-aware parser for Parasolid XT binary part files."""
 
 import logging
 

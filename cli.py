@@ -24,7 +24,7 @@ def main() -> None:
     ap.add_argument(
         "--tree",
         action="store_true",
-        help="display node tree instead of JSON Lines (experimental)",
+        help="display node tree instead of JSON Lines",
     )
     ap.add_argument(
         "--debug",
@@ -42,7 +42,6 @@ def main() -> None:
         nodes = parse_ps(f, schema)
 
     if args.tree:
-        print("warning: --tree is experimental", file=sys.stderr)
         roots, children, by_id, fallback, unknown = build_tree(nodes)
         print(render_tree(roots, children, by_id))
         print(f"Owner fallback node count: {fallback}", file=sys.stderr)
