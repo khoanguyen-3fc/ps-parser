@@ -43,9 +43,16 @@ def main() -> None:
 
     if args.tree:
         print("warning: --tree is experimental", file=sys.stderr)
-        roots, children, by_id, unknown = build_tree(nodes)
+        roots, children, by_id, fallback, unknown = build_tree(nodes)
         print(render_tree(roots, children, by_id))
-        print(f"{unknown} nodes with unrecognized type (owner fallback).", file=sys.stderr)
+        print(f"Owner fallback node count: {fallback}", file=sys.stderr)
+        print(f"No-fallback node count: {len(unknown)}", file=sys.stderr)
+
+        if len(unknown) > 0:
+            unknown_nodes = ", ".join(
+                [f"{by_id[node_id]['node_name']}#{node_id}" for node_id in unknown]
+            )
+            print(f"Unknown nodes: {unknown_nodes}", file=sys.stderr)
     else:
         for node in nodes:
             print(json.dumps(node))

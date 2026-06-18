@@ -2,7 +2,7 @@
 
 # Each node type uses a specific field to point at its topological parent.
 _PARENT_FIELD: dict[str, str] = {
-    "SHELL":    "body",
+    "SHELL":    "region",
     "FACE":     "shell",
     "LOOP":     "face",
     "HALFEDGE": "loop",
@@ -11,13 +11,23 @@ _PARENT_FIELD: dict[str, str] = {
     "INSTANCE": "assembly",
 }
 
+# Each node type whose field explicitly lists child node ID(s).
+# The field value may be None (absent), a single int ID, or a list of int IDs.
+_CHILD_FIELD: dict[str, list[str]] = {
+    "INSTANCE": ["part"],
+    "ATTRIBUTE": ["definition", "fields"],
+    "ATTRIB_DEF": ["identifier", "field_names"],
+    "LIST": ["list_block"],
+    "POINTER_LIS_BLOCK": ["entries"],
+}
+
 # Types that are valid top-level roots with no expected parent.
-_ROOT_TYPES = {"BODY", "ASSEMBLY", "WORLD"}
+_ROOT_TYPES = {"ASSEMBLY", "WORLD"}
 
 
 def build_tree(
     nodes: list[dict],
-) -> tuple[list[int], dict[int, list[int]], dict[int, dict], int]:
+) -> tuple[list[int], dict[int, list[int]], dict[int, dict], int, list[int]]:
     """Build a topology-aware parent→children map from a node list.
 
     Known topology types use their specific parent-pointer field. Known root
@@ -25,13 +35,17 @@ def build_tree(
     the 'owner' field: if it resolves, the node is attached as a child;
     otherwise it is excluded from the tree.
 
-    Returns (roots, children, by_id, unknown_count) where unknown_count is the
-    number of nodes not in the known type tables.
+    Nodes whose type appears in _CHILD_FIELD have that field's value(s) added
+    as explicit children. The field may be absent/None, a single int ID, or a
+    list of int IDs.
+
+    Returns (roots, children, by_id, fallback_count, unknown_ids).
     """
     by_id = {n["id"]: n for n in nodes}
     children: dict[int, list[int]] = {n["id"]: [] for n in nodes}
     roots: list[int] = []
-    unknown = 0
+    fallback = 0
+    unknown: list[int] = []
 
     for node in nodes:
         name = node["node_name"]
@@ -49,32 +63,76 @@ def build_tree(
             roots.append(node["id"])
 
         else:
-            unknown += 1
             val = node.get("owner")
             if isinstance(val, int) and val in by_id:
                 children[val].append(node["id"])
-            # no valid owner → silently excluded from the tree
+                fallback += 1
+            else:
+                unknown.append(node["id"])
 
-    return roots, children, by_id, unknown
+    # Attach explicit down-link children declared in _CHILD_FIELD.
+    # Any unknown node that gets referenced here is no longer unplaced —
+    # remove it from the unknown list.
+    child_placed: set[int] = set()
+    for node in nodes:
+        name = node["node_name"]
+        if name not in _CHILD_FIELD:
+            continue
+        fields = _CHILD_FIELD[name]
+        for field in fields:
+            val = node.get(field)
+            if val is None:
+                continue
+            refs = val if isinstance(val, list) else [val]
+            for ref in refs:
+                if isinstance(ref, int) and ref in by_id:
+                    children[node["id"]].append(ref)
+                    child_placed.add(ref)
+    unknown = [nid for nid in unknown if nid not in child_placed]
+
+    return roots, children, by_id, fallback, unknown
 
 
-def _lines(node_id, by_id, children, prefix, is_last):
+def _lines(node_id: int, by_id, children, prefix: str, is_last: bool,
+           seen: set[int]):
     node = by_id[node_id]
     branch = "└── " if is_last else "├── "
-    yield prefix + branch + f"{node['node_name']}#{node['id']}"
+    label = f"{node['node_name']}#{node['id']}"
+
+    if node_id in seen:
+        # Already expanded elsewhere — show a back-reference marker only.
+        yield prefix + branch + label + " (seen)"
+        return
+
+    seen.add(node_id)
+    yield prefix + branch + label
     child_prefix = prefix + ("    " if is_last else "│   ")
     kids = children.get(node_id, [])
     for i, kid in enumerate(kids):
-        yield from _lines(kid, by_id, children, child_prefix, i == len(kids) - 1)
+        yield from _lines(kid, by_id, children, child_prefix,
+                          i == len(kids) - 1, seen)
 
 
 def render_tree(roots, children, by_id) -> str:
-    """Render the node tree as an ASCII string with NAME#id labels."""
+    """Render the node tree as an ASCII string with NAME#id labels.
+
+    Nodes that appear more than once in the tree (shared references) are
+    rendered in full only on their first occurrence. Subsequent occurrences
+    show the label followed by '↖ (ref)' and no children.
+    """
     lines = []
+    seen: set[int] = set()
     for root_id in roots:
         node = by_id[root_id]
-        lines.append(f"{node['node_name']}#{node['id']}")
+        label = f"{node['node_name']}#{node['id']}"
+        if root_id in seen:
+            lines.append(label + "  ↖ (ref)")
+            continue
+        seen.add(root_id)
+        lines.append(label)
         kids = children.get(root_id, [])
         for i, kid in enumerate(kids):
-            lines.extend(_lines(kid, by_id, children, "", i == len(kids) - 1))
+            lines.extend(
+                _lines(kid, by_id, children, "", i == len(kids) - 1, seen)
+            )
     return "\n".join(lines)
