@@ -294,6 +294,21 @@ def build_tree(
 
     # ── topology traversal ────────────────────────────────────────────────────
 
+    def traverse_world(world: dict, parent_id) -> None:
+        wid = world["id"]
+        _place(parent_id, wid)
+        # WORLD.assembly → top-level assembly
+        if asm := _ref(world, "assembly", by_id):
+            traverse_assembly(asm, wid)
+        # WORLD.body → body chain (bodies directly attached to world, walked via next)
+        for body in _walk(world.get("body"), "next", by_id,
+                          prev_field="previous", violations=violations):
+            traverse_body(body, wid)
+        # WORLD.attrib_def → global ATTRIB_DEF chain (definitions registered in this part)
+        for ad in _walk(world.get("attrib_def"), "next", by_id, violations=violations):
+            _attrib_def(ad, wid)
+        _attr_chain(world, wid)
+
     def traverse_assembly(asm: dict, parent_id) -> None:
         aid = asm["id"]
         _place(parent_id, aid)
@@ -431,6 +446,13 @@ def build_tree(
 
     # ── entry point ────────────────────────────────────────────────────────────
 
+    # WORLD node is the authoritative root when present (Parasolid "part" container).
+    world_nodes = [n for n in nodes if n["node_name"] == "WORLD"]
+    for world in world_nodes:
+        traverse_world(world, None)
+
+    # Fallback for files without a WORLD node: find root assemblies, then
+    # any standalone bodies not yet reached via an assembly chain.
     part_ids: set = {
         n["part"]
         for n in nodes
@@ -442,7 +464,8 @@ def build_tree(
         root_assemblies = [a for a in all_assemblies if a.get("previous") is None]
 
     for asm in root_assemblies:
-        traverse_assembly(asm, None)
+        if asm["id"] not in placed:
+            traverse_assembly(asm, None)
 
     for n in nodes:
         if n["node_name"] == "BODY" and n["id"] not in placed:
