@@ -37,10 +37,10 @@ def parse_file_header(reader: Reader) -> tuple[str, str, int, int]:
     if prefix != b"PS":
         raise ValueError("Invalid file: only PS binary format is supported")
 
-    modeler_version = reader.str_u32_len()
-    schema_name = reader.str_u32_len()
-    schema_max_type = reader.u16()
-    schema_min_type = reader.u16()
+    modeler_version = reader.str_i32_len()
+    schema_name = reader.str_i32_len()
+    schema_max_type = reader.i16()
+    schema_min_type = reader.i16()
 
     reader.stream.read(2)  # Unknown bytes currently not interpreted.
 
@@ -170,10 +170,10 @@ def parse_ps(stream: BinaryIO, base_schema: Schema) -> list[dict]:
     nodes: list[dict] = []
 
     while True:
-        node_type = reader.u16()
+        node_type = reader.i16()
 
         if node_type == 1:
-            _partition = reader.u16()
+            _partition = reader.i16()
             logger.debug("Terminator reached!")
             if reader.stream.read(1) != b"":
                 raise ValueError("Expected end of file after termination node")
@@ -217,13 +217,13 @@ def parse_ps(stream: BinaryIO, base_schema: Schema) -> list[dict]:
 
         repeat_count = 0
         if node_type_def.variable:
-            repeat_count = reader.u32()
+            repeat_count = reader.i32()
             node["count"] = repeat_count
             logger.debug(
                 "Node type #%d: variable with %d instances", node_type, repeat_count
             )
 
-        node_id = reader.u16()
+        node_id = reader.i16()
         node["id"] = node_id
         logger.debug("Node type #%d: id %d", node_type, node_id)
 

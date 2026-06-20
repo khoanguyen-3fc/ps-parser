@@ -4,6 +4,9 @@ from enum import Enum
 import struct
 from typing import BinaryIO, Callable
 
+I16_NULL = b"\x80\x04"  # -32764
+F64_NULL = b"\xc2\xbc\x92\x8f\x99\x6e\x00\x00"  # -3.14158e13
+
 
 class Reader:
     """Thin binary reader for Parasolid primitive field types."""
@@ -15,17 +18,20 @@ class Reader:
         """Read an unsigned 8-bit integer."""
         return int.from_bytes(self.stream.read(1), "big")
 
-    def u16(self) -> int:
-        """Read an unsigned 16-bit integer (big-endian)."""
-        return int.from_bytes(self.stream.read(2), "big")
+    def i16(self) -> int:
+        """Read a signed 16-bit integer (big-endian)."""
+        return int.from_bytes(self.stream.read(2), "big", signed=True)
 
-    def u32(self) -> int:
-        """Read an unsigned 32-bit integer (big-endian)."""
-        return int.from_bytes(self.stream.read(4), "big")
+    def i32(self) -> int:
+        """Read a signed 32-bit integer (big-endian)."""
+        return int.from_bytes(self.stream.read(4), "big", signed=True)
 
     def f64(self) -> float:
         """Read an IEEE-754 float64 (big-endian)."""
-        return struct.unpack(">d", self.stream.read(8))[0]
+        b = self.stream.read(8)
+        if b == F64_NULL:
+            return None
+        return struct.unpack(">d", b)[0]
 
     def char(self, n: int = 1) -> str:
         """Read an ASCII string of fixed byte length."""
@@ -40,7 +46,10 @@ class Reader:
 
     def pointer(self) -> int:
         """Read a pointer token (currently 16-bit in this data set)."""
-        return self.u16()
+        v = self.i16()
+        if v == 1:
+            return None
+        return v
 
     def utf16_be(self, n: int = 1) -> str:
         """Read UTF-16 big-endian text with a code-unit count."""
@@ -64,9 +73,9 @@ class Reader:
         """Read ASCII text prefixed by a u8 byte length."""
         return self.stream.read(self.u8()).decode("ascii")
 
-    def str_u32_len(self) -> str:
-        """Read ASCII text prefixed by a u32 byte length."""
-        return self.stream.read(self.u32()).decode("ascii")
+    def str_i32_len(self) -> str:
+        """Read ASCII text prefixed by a i32 byte length."""
+        return self.stream.read(self.i32()).decode("ascii")
 
 
 class FieldType(Enum):
@@ -75,9 +84,9 @@ class FieldType(Enum):
     U8 = "u"
     CHAR = "c"
     LOGICAL = "l"
-    U16 = "n"
+    I16 = "n"
     UTF16 = "w"
-    U32 = "d"
+    I32 = "d"
     POINTER = "p"
     F64 = "f"
     INTERVAL = "i"
@@ -90,9 +99,9 @@ READERS: dict[FieldType, Callable[[Reader], object]] = {
     FieldType.U8: lambda r: r.u8(),
     FieldType.CHAR: lambda r: r.char(),
     FieldType.LOGICAL: lambda r: r.bool8(),
-    FieldType.U16: lambda r: r.u16(),
+    FieldType.I16: lambda r: r.i16(),
     FieldType.UTF16: lambda r: r.utf16_be(),
-    FieldType.U32: lambda r: r.u32(),
+    FieldType.I32: lambda r: r.i32(),
     FieldType.POINTER: lambda r: r.pointer(),
     FieldType.F64: lambda r: r.f64(),
     FieldType.INTERVAL: lambda r: r.interval(),

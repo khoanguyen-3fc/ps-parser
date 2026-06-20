@@ -149,8 +149,8 @@ def load_schema(path: str) -> Schema:
 def parse_embedded_field(reader: Reader) -> EmbeddedField:
     """Parse one field definition from embedded schema data."""
     name = reader.str_u8_len()
-    ptr_class = reader.u16()
-    n_elements = reader.u16()
+    ptr_class = reader.i16()
+    n_elements = reader.i16()
     field_type = reader.str_u8_len() if ptr_class == 0 else "p"
 
     xmt_code = False

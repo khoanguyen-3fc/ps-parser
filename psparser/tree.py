@@ -25,10 +25,21 @@ _CHILD_FIELD: dict[str, list[str]] = {
     "NURBS_SURF": ["bspline_vertices", "u_knot_mult", "v_knot_mult", "u_knots", "v_knots"],
     "NURBS_CURVE": ["bspline_vertices", "knot_mult", "knots"],
     "SP_CURVE": ["surface", "b_curve"],
+    "HALFEDGE": ["edge", "curve"],
 }
 
 # Types that are valid top-level roots with no expected parent.
 _ROOT_TYPES = {"ASSEMBLY", "WORLD"}
+
+
+def annotate(node: dict) -> str | None:
+    if node["node_name"] == "ATT_DEF_ID":
+        return node["string"]
+
+    if node["node_name"] in {"CHAR_VALUES", "UNICODE_VALUES", "REAL_VALUES"}:
+        return str(node["values"])
+
+    return None
 
 
 def build_tree(
@@ -73,10 +84,7 @@ def build_tree(
             pid = None
 
             geometric_owner = node.get("geometric_owner")
-            if (
-                isinstance(geometric_owner, int)
-                and geometric_owner != 1
-            ):
+            if isinstance(geometric_owner, int) and geometric_owner != 1:
                 pid = geometric_owner
             else:
                 owner = node.get("owner")
@@ -112,11 +120,14 @@ def build_tree(
     return roots, children, by_id, fallback, unknown
 
 
-def _lines(node_id: int, by_id, children, prefix: str, is_last: bool,
-           seen: set[int]):
+def _lines(node_id: int, by_id, children, prefix: str, is_last: bool, seen: set[int]):
     node = by_id[node_id]
     branch = "\\-- " if is_last else "+-- "
     label = f"{node['node_name']}#{node['id']}"
+
+    annotation = annotate(node)
+    if annotation:
+        label += f" [{annotation}]"
 
     if node_id in seen:
         # Already expanded elsewhere - show a back-reference marker only.
@@ -128,8 +139,7 @@ def _lines(node_id: int, by_id, children, prefix: str, is_last: bool,
     child_prefix = prefix + ("    " if is_last else "|   ")
     kids = children.get(node_id, [])
     for i, kid in enumerate(kids):
-        yield from _lines(kid, by_id, children, child_prefix,
-                          i == len(kids) - 1, seen)
+        yield from _lines(kid, by_id, children, child_prefix, i == len(kids) - 1, seen)
 
 
 def render_tree(roots, children, by_id) -> str:
@@ -150,7 +160,5 @@ def render_tree(roots, children, by_id) -> str:
         lines.append(label)
         kids = children.get(root_id, [])
         for i, kid in enumerate(kids):
-            lines.extend(
-                _lines(kid, by_id, children, "", i == len(kids) - 1, seen)
-            )
+            lines.extend(_lines(kid, by_id, children, "", i == len(kids) - 1, seen))
     return "\n".join(lines)
