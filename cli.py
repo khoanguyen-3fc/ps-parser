@@ -42,16 +42,22 @@ def main() -> None:
         nodes = parse_ps(f, schema)
 
     if args.tree:
-        roots, children, by_id, fallback, unknown = build_tree(nodes)
+        roots, children, by_id, violations, placed = build_tree(nodes)
         print(render_tree(roots, children, by_id))
-        print(f"Owner fallback node count: {fallback}", file=sys.stderr)
-        print(f"No-fallback node count: {len(unknown)}", file=sys.stderr)
-
-        if len(unknown) > 0:
-            unknown_nodes = ", ".join(
-                [f"{by_id[node_id]['node_name']}#{node_id}" for node_id in unknown]
+        unreached = [n for n in nodes if n["id"] not in placed]
+        print(f"Reached: {len(placed)}/{len(nodes)} nodes", file=sys.stderr)
+        if unreached:
+            names = ", ".join(
+                f"{n['node_name']}#{n['id']}" for n in unreached[:20]
             )
-            print(f"Unknown nodes: {unknown_nodes}", file=sys.stderr)
+            suffix = f" … and {len(unreached) - 20} more" if len(unreached) > 20 else ""
+            print(f"Unreached ({len(unreached)}): {names}{suffix}", file=sys.stderr)
+        if violations:
+            print(f"Link violations ({len(violations)}):", file=sys.stderr)
+            for v in violations[:10]:
+                print(f"  {v}", file=sys.stderr)
+            if len(violations) > 10:
+                print(f"  … and {len(violations) - 10} more", file=sys.stderr)
     else:
         for node in nodes:
             print(json.dumps(node))
