@@ -1,10 +1,11 @@
 # ps-parser
 
-A dynamic, schema-aware parser for **Parasolid XT** binary part files (`.x_b`).
+A dynamic, schema-aware library for **Parasolid XT** binary part files (`.x_b`).
 
-The parser reads the XT binary node stream against a base schema and resolves
+The library reads the XT binary node stream against a base schema and resolves
 per-node schemas on the fly — handling files that embed full or delta schema
-definitions for node types that differ from (or extend) the base schema.
+definitions for node types that differ from (or extend) the base schema. It
+also supports writing edited documents back through the library API.
 
 ## Installation
 
@@ -63,6 +64,7 @@ psparser/
   reader.py            # binary readers + field-type codes
   schema.py            # schema data models + base/embedded schema parsing
   parser.py            # file header + dynamic node-stream decoder
+  writer.py            # XT serializer for decoded documents
   tree.py              # topology tree builder + ASCII renderer
 assets/                # default base schema
 ```
@@ -79,6 +81,8 @@ with open("samples/model.x_b", "rb") as f:
 
 `parse_ps` returns a `list[dict]` of decoded nodes and emits diagnostics through
 the `logging` module (no printing), so callers control verbosity.
+
+For edit/write workflows, use `read_document` and `write_document`.
 
 ## Reference
 

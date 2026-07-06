@@ -1,6 +1,8 @@
 """Dynamic, schema-aware decoder for Parasolid XT binary part files."""
 
+import io
 import logging
+from dataclasses import dataclass
 from typing import BinaryIO
 
 from .reader import Reader
@@ -126,34 +128,9 @@ def resolve_node_schema(
     return fields
 
 
-def parse_ps(stream: BinaryIO, base_schema: Schema) -> list[dict]:
-    """Parse one Parasolid binary file using dynamic schema resolution.
-
-    Returns the list of decoded nodes. Diagnostic detail is emitted through the
-    module logger at DEBUG level rather than printed.
-    """
-    reader = Reader(stream)
-
-    modeler_version, schema_name, schema_min_type, schema_max_type = parse_file_header(
-        reader
-    )
-    logger.debug("Modeler version: %s", modeler_version)
-    logger.debug("Schema name: %s", schema_name)
-
-    if not schema_name.endswith(base_schema.name):
-        raise ValueError(
-            f"File schema name '{schema_name}' does not match expected base schema '{base_schema.name}'"
-        )
-
-    logger.debug(
-        "File schema '%s' compatible with base schema '%s'",
-        schema_name,
-        base_schema.name,
-    )
-    logger.debug("Schema type range: %d to %d", schema_min_type, schema_max_type)
-
-    # clone base schema types to allow in-place updates when full embedded schemas are encountered
-    base_schema = Schema(
+def _clone_schema(base_schema: Schema) -> Schema:
+    """Copy schema types so embedded full-schemas don't mutate the shared base."""
+    return Schema(
         name=base_schema.name,
         types={
             k: TypeDef(
@@ -166,49 +143,107 @@ def parse_ps(stream: BinaryIO, base_schema: Schema) -> list[dict]:
             for k, v in base_schema.types.items()
         },
     )
-    working_schema: dict[int, list[FieldDef]] = {}
+
+
+@dataclass
+class Document:
+    """A round-trippable Parasolid file: decoded nodes plus the raw framing needed
+    to re-serialize them byte-for-byte (see psparser.writer.write_document).
+
+    `header` and `terminator` are captured verbatim; `schema_blobs` holds each
+    node type's raw embedded-schema bytes (u8 field-count + payload), re-emitted
+    once at the type's first occurrence; `layouts` and `variable` give the
+    resolved per-type field layout used to encode each node's fields.
+    """
+
+    header: bytes
+    nodes: list[dict]
+    layouts: dict[int, list[FieldDef]]
+    variable: dict[int, bool]
+    schema_blobs: dict[int, bytes]
+    terminator: bytes
+    modeler_version: str = ""
+    schema_name: str = ""
+    schema_min_type: int = 0
+    schema_max_type: int = 0
+
+
+def read_document(stream: BinaryIO, base_schema: Schema) -> Document:
+    """Parse a Parasolid binary file, capturing everything needed to rewrite it.
+
+    Decodes every node (like `parse_ps`) and additionally retains the raw header,
+    per-type embedded-schema blobs, resolved field layouts, and the terminator.
+    """
+    data = stream.read()
+    buf = io.BytesIO(data)
+    reader = Reader(buf)
+
+    modeler_version, schema_name, schema_min_type, schema_max_type = parse_file_header(
+        reader
+    )
+    header = data[: buf.tell()]
+    logger.debug("Modeler version: %s; schema: %s", modeler_version, schema_name)
+
+    if not schema_name.endswith(base_schema.name):
+        raise ValueError(
+            f"File schema name '{schema_name}' does not match expected base "
+            f"schema '{base_schema.name}'"
+        )
+
+    base_schema = _clone_schema(base_schema)
+    layouts: dict[int, list[FieldDef]] = {}
+    variable: dict[int, bool] = {}
+    schema_blobs: dict[int, bytes] = {}
     nodes: list[dict] = []
 
     while True:
+        record_start = buf.tell()
         node_type = reader.i16()
 
         if node_type == 1:
-            _partition = reader.i16()
-            logger.debug("Terminator reached!")
-            if reader.stream.read(1) != b"":
+            reader.i16()  # partition value
+            terminator = data[record_start:]
+            if buf.read(1) != b"":
                 raise ValueError("Expected end of file after termination node")
-            break
+            logger.debug("Terminator reached; %d nodes", len(nodes))
+            return Document(
+                header=header,
+                nodes=nodes,
+                layouts=layouts,
+                variable=variable,
+                schema_blobs=schema_blobs,
+                terminator=terminator,
+                modeler_version=modeler_version,
+                schema_name=schema_name,
+                schema_min_type=schema_min_type,
+                schema_max_type=schema_max_type,
+            )
 
         if node_type > schema_max_type:
             raise ValueError(
                 f"Invalid node type {node_type}; max allowed is {schema_max_type}"
             )
 
-        if node_type not in working_schema:
+        if node_type not in layouts:
+            blob_start = buf.tell()
             field_count = reader.u8()
-
             if field_count == 255:
-                logger.debug("Node type #%d: no embedded schema", node_type)
                 base_type = base_schema.types.get(node_type)
                 if base_type is None:
                     raise ValueError(
-                        f"Node type #{node_type} missing from base schema and no embedded schema provided"
+                        f"Node type #{node_type} missing from base schema and no "
+                        "embedded schema provided"
                     )
-                working_schema[node_type] = base_type.fields
+                layouts[node_type] = base_type.fields
             else:
-                working_schema[node_type] = resolve_node_schema(
+                layouts[node_type] = resolve_node_schema(
                     reader, node_type, field_count, base_schema
                 )
+            schema_blobs[node_type] = data[blob_start : buf.tell()]
+            variable[node_type] = base_schema.types[node_type].variable
 
-        node_fields = working_schema[node_type]
+        node_fields = layouts[node_type]
         node_type_def = base_schema.types[node_type]
-
-        logger.debug(
-            "Node type #%d: %s - %s",
-            node_type,
-            node_type_def.node_name,
-            node_type_def.description,
-        )
 
         node: dict[str, object] = {
             "node_type": node_type,
@@ -219,25 +254,24 @@ def parse_ps(stream: BinaryIO, base_schema: Schema) -> list[dict]:
         if node_type_def.variable:
             repeat_count = reader.i32()
             node["count"] = repeat_count
-            logger.debug(
-                "Node type #%d: variable with %d instances", node_type, repeat_count
-            )
 
-        node_id = reader.i16()
-        node["id"] = node_id
-        logger.debug("Node type #%d: id %d", node_type, node_id)
+        node["id"] = reader.i16()
 
         last_field_index = len(node_fields) - 1
-        for idx, field in enumerate(node_fields):
-            value = (
-                field.read(reader, repeat_count)
+        for idx, fdef in enumerate(node_fields):
+            node[fdef.name] = (
+                fdef.read(reader, repeat_count)
                 if node_type_def.variable and idx == last_field_index
-                else field.read(reader)
+                else fdef.read(reader)
             )
-            node[field.name] = value
-            logger.debug("  Field %s: %s", field.name, value)
 
-        logger.debug("%s", node)
         nodes.append(node)
 
-    return nodes
+
+def parse_ps(stream: BinaryIO, base_schema: Schema) -> list[dict]:
+    """Parse one Parasolid binary file and return its decoded nodes.
+
+    Thin wrapper over `read_document`; use `read_document` when you also need the
+    raw framing (header, schema blobs, terminator) to re-serialize the file.
+    """
+    return read_document(stream, base_schema).nodes

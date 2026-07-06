@@ -6,6 +6,7 @@ import os
 import re
 
 from .reader import FieldType, READERS, Reader
+from .writer import WRITERS
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,27 @@ class FieldDef:
             return [read_one(reader) for _ in range(count)]
 
         return read_one(reader)
+
+    def write(self, writer, value: object, count_override: int = 1) -> None:
+        """Encode this field to a Writer; the write-side dual of `read`.
+
+        Mirrors `read` exactly: for variable-length nodes the final field may use
+        `count_override`, and CHAR/UTF16 arrays are one string while other arrays
+        are written element by element.
+        """
+        write_one = WRITERS[self.field_type]
+        count = count_override if count_override > 1 else self.n_elements
+
+        if count > 1:
+            if self.field_type is FieldType.CHAR:
+                writer.char(value)
+            elif self.field_type is FieldType.UTF16:
+                writer.utf16_be(value)
+            else:
+                for element in value:
+                    write_one(writer, element)
+        else:
+            write_one(writer, value)
 
 
 @dataclass(slots=True)
