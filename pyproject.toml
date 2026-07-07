@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "psparser"
+version = "0.1.0"
+description = "Reader/writer for the Parasolid XT part format"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+# Only the library package is installable; cli.py / exp / samples are dev-only.
+packages = ["psparser"]
